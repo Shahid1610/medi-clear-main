@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react"; // <-- Import useEffect
 import { analyzeSymptoms } from "../services/api";
 import type { SymptomAssessment } from "../types";
 import LoadingSpinner from "../components/LoadingSpinner";
@@ -11,17 +11,31 @@ import {
   ArrowRight,
   ArrowLeft,
   HeartPulse,
+  Mic, // <-- Import the Mic icon
+  Square, // <-- Import the Square icon
 } from "lucide-react";
 import {
   ConditionsPieChart,
   UrgencyBarChart,
 } from "../components/AssessmentCharts";
 
+// Define the type for the Web Speech API
+declare global {
+  interface Window {
+    webkitSpeechRecognition: any;
+    SpeechRecognition: any;
+  }
+}
+
 export default function SymptomChecker() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [assessment, setAssessment] = useState<SymptomAssessment | null>(null);
+
+  // New state for voice typing
+  const [isListening, setIsListening] = useState(false);
+  const [speechRecognition, setSpeechRecognition] = useState<any>(null);
 
   const [formData, setFormData] = useState({
     symptoms: "",
@@ -31,8 +45,107 @@ export default function SymptomChecker() {
     severity: 5,
   });
 
+  // --- Voice Typing Logic (New/Modified Section) ---
+  useEffect(() => {
+    // Check for browser compatibility
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = "en-US";
+
+      recognition.onstart = () => {
+        setIsListening(true);
+        console.log("Voice recognition started.");
+      };
+
+      // *** FIX APPLIED HERE ***
+      // We now update formData.symptoms with the full current transcript
+      // (including interim results) on every 'onresult' event for real-time display.
+      recognition.onresult = (event: any) => {
+        let fullCurrentTranscript = "";
+
+        // Loop through all results (both final and interim)
+        for (let i = 0; i < event.results.length; ++i) {
+          fullCurrentTranscript += event.results[i][0].transcript;
+        }
+
+        // Update the state with the full running text
+        setFormData((prev) => ({
+          ...prev,
+          symptoms: fullCurrentTranscript,
+        }));
+      };
+      // *** END FIX ***
+
+      recognition.onerror = (event: any) => {
+        console.error("Speech Recognition Error:", event.error);
+        setError("Voice input failed. Please check your microphone and permissions.");
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+        console.log("Voice recognition ended.");
+      };
+
+      setSpeechRecognition(recognition);
+
+      // Cleanup function to stop recognition when the component unmounts
+      return () => {
+        recognition.stop();
+      };
+    } else {
+      console.warn("Web Speech API not supported in this browser.");
+      setError("Voice input is not supported in your browser.");
+    }
+  }, []);
+
+  const toggleListening = () => {
+    if (!speechRecognition) return;
+
+    if (isListening) {
+      speechRecognition.stop();
+      setIsListening(false);
+    } else {
+      // Clear previous error message if user tries again
+      setError(null);
+      try {
+        // We stop any previous instance before starting a new one
+        speechRecognition.stop(); 
+        // Note: The `onend` handler will run a moment later, setting isListening to false, 
+        // but starting immediately after calling stop often works better.
+        
+        // When starting, clear the symptoms field to ensure a fresh voice input session
+        setFormData((prev) => ({
+            ...prev,
+            symptoms: "",
+        }));
+
+        speechRecognition.start();
+      } catch (e: any) {
+        console.error("Recognition start failed:", e);
+        if (e instanceof DOMException && e.message.includes("already started")) {
+          // Ignore if already started
+        } else {
+          setError("Microphone access blocked or failed to start service.");
+          setIsListening(false);
+        }
+      }
+    }
+  };
+  // ----------------------------------------------------------------------
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Stop listening if submission starts while voice typing is active
+    if (isListening && speechRecognition) {
+      speechRecognition.stop();
+      setIsListening(false);
+    }
     setLoading(true);
     setError(null);
 
@@ -65,6 +178,7 @@ export default function SymptomChecker() {
   };
 
   if (assessment) {
+    // ... (Assessment Results JSX remains unchanged)
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 py-8 px-4">
         <div className="max-w-4xl mx-auto">
@@ -104,7 +218,7 @@ export default function SymptomChecker() {
                 </div>
                 <div className="w-full bg-slate-600 rounded-full h-3">
                   <div
-                    className={`h-3 rounded-full shadow-lg ${
+                    className={`h-full rounded-full shadow-lg ${
                       assessment.urgency_score > 70
                         ? "bg-gradient-to-r from-red-500 to-red-600"
                         : assessment.urgency_score > 40
@@ -343,16 +457,40 @@ export default function SymptomChecker() {
                       Describe Your Symptoms
                     </label>
                   </div>
-                  <textarea
-                    value={formData.symptoms}
-                    onChange={(e) =>
-                      setFormData({ ...formData, symptoms: e.target.value })
-                    }
-                    rows={6}
-                    className="w-full px-4 py-3 bg-slate-700/50 border border-slate-600 text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 placeholder-gray-500 transition-all duration-200 resize-none"
-                    placeholder="Describe what you're experiencing in detail...&#10;E.g., I have a persistent headache, fever around 100.4°F, and sore throat that started 2 days ago. The pain worsens when swallowing."
-                    required
-                  />
+                  {/* Textarea with Voice Input Button */}
+                  <div className="relative">
+                    <textarea
+                      value={formData.symptoms}
+                      onChange={(e) =>
+                        setFormData({ ...formData, symptoms: e.target.value })
+                      }
+                      rows={6}
+                      className={`w-full px-4 py-3 pr-12 bg-slate-700/50 border border-slate-600 text-white rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 placeholder-gray-500 transition-all duration-200 resize-none ${
+                        isListening ? "border-cyan-500" : ""
+                      }`}
+                      placeholder="Describe what you're experiencing in detail...&#10;E.g., I have a persistent headache, fever around 100.4°F, and sore throat that started 2 days ago. The pain worsens when swallowing."
+                      required
+                      disabled={isListening} // Disable typing while listening
+                    />
+                    {speechRecognition && (
+                      <button
+                        type="button"
+                        onClick={toggleListening}
+                        className={`absolute top-2 right-2 p-2 rounded-full transition-all duration-300 ${
+                          isListening
+                            ? "bg-red-500 text-white shadow-lg shadow-red-500/50 animate-pulse"
+                            : "bg-slate-700 text-cyan-400 hover:bg-slate-600"
+                        }`}
+                        aria-label={isListening ? "Stop Voice Input" : "Start Voice Input"}
+                      >
+                        {isListening ? (
+                          <Square className="w-5 h-5" />
+                        ) : (
+                          <Mic className="w-5 h-5" />
+                        )}
+                      </button>
+                    )}
+                  </div>
                   <p className="text-xs text-gray-500 flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4" />
                     Be as detailed as possible for more accurate assessment
@@ -361,7 +499,7 @@ export default function SymptomChecker() {
                 <button
                   type="button"
                   onClick={() => setStep(2)}
-                  disabled={!formData.symptoms.trim()}
+                  disabled={!formData.symptoms.trim() || isListening} // Disable if listening
                   className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 text-white py-3.5 rounded-lg font-semibold hover:from-cyan-600 hover:to-blue-700 transition-all shadow-lg shadow-cyan-500/50 hover:shadow-xl hover:shadow-cyan-500/70 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none flex items-center justify-center gap-2 group"
                 >
                   Continue
@@ -520,75 +658,75 @@ export default function SymptomChecker() {
                       </div>
                     </div>
                   </div>
+                </div>
 
-                  <div className="bg-gradient-to-br from-slate-700/50 to-slate-800/50 p-6 rounded-lg border border-cyan-500/20 shadow-lg">
-                    <input
-                      type="range"
-                      min="1"
-                      max="10"
-                      value={formData.severity}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          severity: parseInt(e.target.value),
-                        })
-                      }
-                      className="w-full h-4 appearance-none cursor-pointer transition-all duration-200 hover:scale-105 rounded-full"
-                      style={{
-                        background:
-                          formData.severity <= 3
-                            ? `linear-gradient(to right, #10b981 0%, #10b981 ${
-                                (formData.severity - 1) * 11.11
-                              }%, #475569 ${
-                                (formData.severity - 1) * 11.11
-                              }%, #475569 100%)`
-                            : formData.severity <= 6
-                            ? `linear-gradient(to right, #eab308 0%, #eab308 ${
-                                (formData.severity - 1) * 11.11
-                              }%, #475569 ${
-                                (formData.severity - 1) * 11.11
-                              }%, #475569 100%)`
-                            : formData.severity <= 9
-                            ? `linear-gradient(to right, #f97316 0%, #f97316 ${
-                                (formData.severity - 1) * 11.11
-                              }%, #475569 ${
-                                (formData.severity - 1) * 11.11
-                              }%, #475569 100%)`
-                            : `linear-gradient(to right, #ef4444 0%, #ef4444 ${
-                                (formData.severity - 1) * 11.11
-                              }%, #475569 ${
-                                (formData.severity - 1) * 11.11
-                              }%, #475569 100%)`,
-                        WebkitAppearance: "none",
-                        MozAppearance: "none",
-                      }}
-                    />
-                    <div className="flex justify-between text-xs mt-4">
-                      <span className="flex flex-col items-center">
-                        <span className="text-2xl font-bold text-green-400">
-                          1-3
-                        </span>
-                        <span className="text-green-300 mt-1">Mild</span>
+                <div className="bg-gradient-to-br from-slate-700/50 to-slate-800/50 p-6 rounded-lg border border-cyan-500/20 shadow-lg">
+                  <input
+                    type="range"
+                    min="1"
+                    max="10"
+                    value={formData.severity}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        severity: parseInt(e.target.value),
+                      })
+                    }
+                    className="w-full h-4 appearance-none cursor-pointer transition-all duration-200 hover:scale-105 rounded-full"
+                    style={{
+                      background:
+                        formData.severity <= 3
+                          ? `linear-gradient(to right, #10b981 0%, #10b981 ${
+                              (formData.severity - 1) * 11.11
+                            }%, #475569 ${
+                              (formData.severity - 1) * 11.11
+                            }%, #475569 100%)`
+                          : formData.severity <= 6
+                          ? `linear-gradient(to right, #eab308 0%, #eab308 ${
+                              (formData.severity - 1) * 11.11
+                            }%, #475569 ${
+                              (formData.severity - 1) * 11.11
+                            }%, #475569 100%)`
+                          : formData.severity <= 9
+                          ? `linear-gradient(to right, #f97316 0%, #f97316 ${
+                              (formData.severity - 1) * 11.11
+                            }%, #475569 ${
+                              (formData.severity - 1) * 11.11
+                            }%, #475569 100%)`
+                          : `linear-gradient(to right, #ef4444 0%, #ef4444 ${
+                              (formData.severity - 1) * 11.11
+                            }%, #475569 ${
+                              (formData.severity - 1) * 11.11
+                            }%, #475569 100%)`,
+                      WebkitAppearance: "none",
+                      MozAppearance: "none",
+                    }}
+                  />
+                  <div className="flex justify-between text-xs mt-4">
+                    <span className="flex flex-col items-center">
+                      <span className="text-2xl font-bold text-green-400">
+                        1-3
                       </span>
-                      <span className="flex flex-col items-center">
-                        <span className="text-2xl font-bold text-yellow-400">
-                          4-6
-                        </span>
-                        <span className="text-yellow-300 mt-1">Moderate</span>
+                      <span className="text-green-300 mt-1">Mild</span>
+                    </span>
+                    <span className="flex flex-col items-center">
+                      <span className="text-2xl font-bold text-yellow-400">
+                        4-6
                       </span>
-                      <span className="flex flex-col items-center">
-                        <span className="text-2xl font-bold text-orange-400">
-                          7-9
-                        </span>
-                        <span className="text-orange-300 mt-1">Severe</span>
+                      <span className="text-yellow-300 mt-1">Moderate</span>
+                    </span>
+                    <span className="flex flex-col items-center">
+                      <span className="text-2xl font-bold text-orange-400">
+                        7-9
                       </span>
-                      <span className="flex flex-col items-center">
-                        <span className="text-2xl font-bold text-red-400">
-                          10
-                        </span>
-                        <span className="text-red-300 mt-1">Critical</span>
+                      <span className="text-orange-300 mt-1">Severe</span>
+                    </span>
+                    <span className="flex flex-col items-center">
+                      <span className="text-2xl font-bold text-red-400">
+                        10
                       </span>
-                    </div>
+                      <span className="text-red-300 mt-1">Critical</span>
+                    </span>
                   </div>
                 </div>
 
