@@ -10,12 +10,12 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    # ADDED http://localhost:5174 to the allowed list
+    allow_origins=["http://localhost:3000", "http://localhost:5173", "http://localhost:5174"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 app.include_router(symptom_checker.router, prefix="/api/v1", tags=["Symptom Checker"])
 app.include_router(records.router, prefix="/api/v1", tags=["Records"])
 app.include_router(reports.router, prefix="/api/v1", tags=["Reports"])
@@ -34,6 +34,6 @@ async def root():
 async def health_check():
     return {"status": "healthy"}
 
-if __name__ == "__main__":
+if __name__ == "_main_":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

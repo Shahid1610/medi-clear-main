@@ -29,8 +29,21 @@ apiClient.interceptors.response.use(
 );
 
 export const analyzeSymptoms = async (symptomData: SymptomRequest): Promise<SymptomAssessment> => {
-  const response = await apiClient.post('/symptoms/analyze', symptomData);
-  return response.data;
+  try {
+    const response = await apiClient.post('/symptoms/analyze', symptomData);
+    return response.data;
+  } catch (error: any) {
+    // If backend returns a structured error, surface it
+    if (error.response && error.response.data && error.response.data.detail) {
+      throw new Error(
+        typeof error.response.data.detail === 'string'
+          ? error.response.data.detail
+          : JSON.stringify(error.response.data.detail)
+      );
+    }
+    // Otherwise, throw generic error
+    throw new Error('Failed to analyze symptoms. ' + (error.message || 'Unknown error.'));
+  }
 };
 
 export const uploadMedicalRecord = async (formData: FormData) => {

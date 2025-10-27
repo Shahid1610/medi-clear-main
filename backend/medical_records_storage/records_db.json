@@ -1,0 +1,33 @@
+{
+  "medical_records": [
+    {
+      "id": "a894b127-5a74-4c22-abf5-2720ab535bc6",
+      "user_id": "00000000-0000-0000-0000-000000000001",
+      "record_type": "Prescription",
+      "report_date": "2025-10-21",
+      "lab_name": "kkk",
+      "file_path": "medical_records_storage\\files\\a894b127-5a74-4c22-abf5-2720ab535bc6.jpg",
+      "extracted_text": "",
+      "parsed_data": {},
+      "notes": null,
+      "status": "NORMAL",
+      "created_at": "2025-10-27T15:16:43.063934",
+      "updated_at": "2025-10-27T15:16:43.063934"
+    },
+    {
+      "id": "98838b77-f718-43d3-bc23-e545aee59c69",
+      "user_id": "00000000-0000-0000-0000-000000000001",
+      "record_type": "Other",
+      "report_date": "2025-10-09",
+      "lab_name": "lol",
+      "file_path": "medical_records_storage\\files\\98838b77-f718-43d3-bc23-e545aee59c69.jpg",
+      "extracted_text": "",
+      "parsed_data": {},
+      "notes": "m",
+      "status": "NORMAL",
+      "created_at": "2025-10-27T15:46:58.461346",
+      "updated_at": "2025-10-27T15:46:58.461346"
+    }
+  ],
+  "report_explanations": []
+}
